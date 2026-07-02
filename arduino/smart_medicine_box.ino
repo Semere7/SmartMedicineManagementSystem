@@ -51,6 +51,10 @@ enum SystemState {
 
 SystemState currentState = STATE_IDLE;
 
+// Slot requested via keypad demo flow or serial command, used by
+// STATE_OPENING_SLOT to know which slot to open.
+int requestedSlot = 1;
+
 void openSlot(int slotNumber) {
   int angle;
 
@@ -172,7 +176,7 @@ void handlePinState() {
 // STATE_OPENING_SLOT: PIN was correct, open the medicine slot, then wait
 // for the user to confirm they took the medicine.
 void handleOpeningState() {
-  openSlot(1);
+  openSlot(requestedSlot);
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -196,7 +200,42 @@ void handleConfirmationState() {
   }
 }
 
+// Reads newline-terminated commands from the USB serial connection
+// (sent by the dashboard) and starts the reminder flow for the
+// requested slot. Prints OK for accepted commands, ERROR otherwise.
+void handleSerialCommands() {
+  if (Serial.available() == 0) {
+    return;
+  }
+
+  String command = Serial.readStringUntil('\n');
+  command.trim();
+
+  int slot = 0;
+
+  if (command == "OPEN_SLOT_1") {
+    slot = 1;
+  } else if (command == "OPEN_SLOT_2") {
+    slot = 2;
+  } else if (command == "OPEN_SLOT_3") {
+    slot = 3;
+  } else if (command == "OPEN_SLOT_4") {
+    slot = 4;
+  }
+
+  if (slot == 0) {
+    Serial.println("ERROR");
+    return;
+  }
+
+  requestedSlot = slot;
+  currentState = STATE_REMINDER;
+  Serial.println("OK");
+}
+
 void setup() {
+  Serial.begin(9600);
+
   lcd.begin(16, 2);
   lcd.setBacklight(1);
 
@@ -207,6 +246,8 @@ void setup() {
 }
 
 void loop() {
+  handleSerialCommands();
+
   switch (currentState) {
     case STATE_IDLE:
       handleIdleState();
