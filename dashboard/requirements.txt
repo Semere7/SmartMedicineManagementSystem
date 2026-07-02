@@ -1,6 +1,8 @@
 # Python dependencies for the Smart Medicine Management System dashboard.
 # Install with: pip install -r requirements.txt
 
+fastapi==0.111.0    # Web backend serving the dashboard API and frontend
+uvicorn==0.30.1     # ASGI server used to run the FastAPI app
 pyserial==3.5       # USB serial communication with the Arduino
 schedule==1.2.2     # Job scheduler — triggers dose commands based on PC system clock
 plyer==2.1.0        # Cross-platform desktop notifications for dose reminders

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Medicine Management System</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Smart Medicine Management System</h1>
+
+    <div class="info-bar">
+      <span id="current-time">--:--:--</span>
+      <span id="system-status">Status: System Ready</span>
+    </div>
+
+    <div class="slots">
+      <div class="slot-card">
+        <h2>Morning</h2>
+        <button class="trigger-button" data-slot="1">Trigger Slot 1</button>
+      </div>
+      <div class="slot-card">
+        <h2>Noon</h2>
+        <button class="trigger-button" data-slot="2">Trigger Slot 2</button>
+      </div>
+      <div class="slot-card">
+        <h2>Evening</h2>
+        <button class="trigger-button" data-slot="3">Trigger Slot 3</button>
+      </div>
+      <div class="slot-card">
+        <h2>Night</h2>
+        <button class="trigger-button" data-slot="4">Trigger Slot 4</button>
+      </div>
+    </div>
+
+    <div class="log-section">
+      <h2>Event Log</h2>
+      <ul id="event-log"></ul>
+    </div>
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
