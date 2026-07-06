@@ -11,6 +11,9 @@ const int SLOT_2_ANGLE = 60;
 const int SLOT_3_ANGLE = 120;
 const int SLOT_4_ANGLE = 180;
 
+// Buzzer setup
+const int BUZZER_PIN = 8;
+
 // Keypad setup (4x4)
 const byte KEYPAD_ROWS = 4;
 const byte KEYPAD_COLS = 4;
@@ -54,6 +57,16 @@ SystemState currentState = STATE_IDLE;
 // Slot requested via keypad demo flow or serial command, used by
 // STATE_OPENING_SLOT to know which slot to open.
 int requestedSlot = 1;
+
+// Plays three short beeps to accompany the medicine reminder.
+void playReminderSound() {
+  for (int i = 0; i < 3; i++) {
+    tone(BUZZER_PIN, 1000);
+    delay(150);
+    noTone(BUZZER_PIN);
+    delay(150);
+  }
+}
 
 void openSlot(int slotNumber) {
   int angle;
@@ -133,13 +146,17 @@ void handleIdleState() {
   currentState = STATE_REMINDER;
 }
 
-// STATE_REMINDER: tell the user it's time for medicine, then ask for the PIN.
+// STATE_REMINDER: tell the user it's time for medicine, play the reminder
+// sound, then ask for the PIN.
 void handleReminderState() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("TIME FOR");
   lcd.setCursor(0, 1);
   lcd.print("MEDICINE");
+
+  playReminderSound();
+
   delay(2000);
 
   resetPinInput();
@@ -241,6 +258,8 @@ void setup() {
 
   slotServo.attach(SERVO_PIN);
   slotServo.write(90);
+
+  pinMode(BUZZER_PIN, OUTPUT);
 
   currentState = STATE_IDLE;
 }
