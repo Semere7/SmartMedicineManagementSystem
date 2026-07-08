@@ -14,6 +14,8 @@ const int LED_SLOT_2_PIN = 3;
 const int LED_SLOT_3_PIN = 4;
 const int LED_SLOT_4_PIN = 5;
 
+const int BUZZER_PIN = 8;
+
 const byte KEYPAD_ROWS = 4;
 const byte KEYPAD_COLS = 4;
 
@@ -59,6 +61,14 @@ void showActiveSlotLed(int slotNumber) {
   if (slotNumber == 1) {
     digitalWrite(LED_SLOT_1_PIN, HIGH);
   }
+}
+
+void playReminderSound() {
+  for (int i = 0; i < 3; i++) {
+    tone(BUZZER_PIN, 1200, 150);
+    delay(200);
+  }
+  noTone(BUZZER_PIN);
 }
 
 void showEnterPinScreen() {
@@ -129,6 +139,8 @@ void handleReminderState() {
   lcd.print("MEDICINE");
   delay(2000);
 
+  playReminderSound();
+
   resetPinInput();
   currentState = STATE_WAITING_FOR_PIN;
 }
@@ -195,6 +207,8 @@ void setup() {
   pinMode(LED_SLOT_2_PIN, OUTPUT);
   pinMode(LED_SLOT_3_PIN, OUTPUT);
   pinMode(LED_SLOT_4_PIN, OUTPUT);
+
+  pinMode(BUZZER_PIN, OUTPUT);
 
   turnOffAllLeds();
 
