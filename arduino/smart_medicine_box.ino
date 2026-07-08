@@ -7,12 +7,7 @@ Servo slotServo;
 
 const int SERVO_PIN = 9;
 const int SLOT_1_ANGLE = 0;
-const int SLOT_2_ANGLE = 60;
-const int SLOT_3_ANGLE = 120;
-const int SLOT_4_ANGLE = 180;
-
-// Buzzer setup
-const int BUZZER_PIN = 8;
+const int SERVO_REST_ANGLE = 90;
 
 // Keypad setup (4x4)
 const byte KEYPAD_ROWS = 4;
@@ -39,7 +34,7 @@ int pinIndex = 0;
 
 // ---- State Machine ----
 //
-// STATE_IDLE                 - system is at rest, waiting to start a new cycle.
+// STATE_IDLE                 - system is ready, waiting to start a new cycle.
 // STATE_REMINDER             - tells the user it's time for medicine.
 // STATE_WAITING_FOR_PIN      - user must enter the correct PIN to continue.
 // STATE_OPENING_SLOT         - PIN accepted, the medicine slot is being opened.
@@ -54,53 +49,15 @@ enum SystemState {
 
 SystemState currentState = STATE_IDLE;
 
-// Slot requested via keypad demo flow or serial command, used by
-// STATE_OPENING_SLOT to know which slot to open.
-int requestedSlot = 1;
-
-// Plays three short beeps to accompany the medicine reminder.
-void playReminderSound() {
-  for (int i = 0; i < 3; i++) {
-    tone(BUZZER_PIN, 1000);
-    delay(150);
-    noTone(BUZZER_PIN);
-    delay(150);
-  }
-}
-
-void openSlot(int slotNumber) {
-  int angle;
-
-  switch (slotNumber) {
-    case 1:
-      angle = SLOT_1_ANGLE;
-      break;
-    case 2:
-      angle = SLOT_2_ANGLE;
-      break;
-    case 3:
-      angle = SLOT_3_ANGLE;
-      break;
-    case 4:
-      angle = SLOT_4_ANGLE;
-      break;
-    default:
-      return;
-  }
-
+void openSlot() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Opening Slot ");
-  lcd.print(slotNumber);
+  lcd.print("Opening Slot 1");
 
-  slotServo.write(angle);
+  slotServo.write(SLOT_1_ANGLE);
   delay(2000);
 
-  slotServo.write(90);
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("SYSTEM READY");
+  slotServo.write(SERVO_REST_ANGLE);
 }
 
 // Shows the PIN entry prompt on the LCD
@@ -140,23 +97,24 @@ void checkPin() {
   }
 }
 
-// STATE_IDLE: nothing to do yet. For now, automatically move on to the
-// reminder state so the flow can be tested end to end.
+// STATE_IDLE: show the system ready screen, then move on to the reminder
+// state so the flow can be tested end to end.
 void handleIdleState() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("SYSTEM READY");
+  delay(2000);
+
   currentState = STATE_REMINDER;
 }
 
-// STATE_REMINDER: tell the user it's time for medicine, play the reminder
-// sound, then ask for the PIN.
+// STATE_REMINDER: tell the user it's time for medicine, then ask for the PIN.
 void handleReminderState() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("TIME FOR");
   lcd.setCursor(0, 1);
   lcd.print("MEDICINE");
-
-  playReminderSound();
-
   delay(2000);
 
   resetPinInput();
@@ -193,7 +151,7 @@ void handlePinState() {
 // STATE_OPENING_SLOT: PIN was correct, open the medicine slot, then wait
 // for the user to confirm they took the medicine.
 void handleOpeningState() {
-  openSlot(requestedSlot);
+  openSlot();
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -217,56 +175,17 @@ void handleConfirmationState() {
   }
 }
 
-// Reads newline-terminated commands from the USB serial connection
-// (sent by the dashboard) and starts the reminder flow for the
-// requested slot. Prints OK for accepted commands, ERROR otherwise.
-void handleSerialCommands() {
-  if (Serial.available() == 0) {
-    return;
-  }
-
-  String command = Serial.readStringUntil('\n');
-  command.trim();
-
-  int slot = 0;
-
-  if (command == "OPEN_SLOT_1") {
-    slot = 1;
-  } else if (command == "OPEN_SLOT_2") {
-    slot = 2;
-  } else if (command == "OPEN_SLOT_3") {
-    slot = 3;
-  } else if (command == "OPEN_SLOT_4") {
-    slot = 4;
-  }
-
-  if (slot == 0) {
-    Serial.println("ERROR");
-    return;
-  }
-
-  requestedSlot = slot;
-  currentState = STATE_REMINDER;
-  Serial.println("OK");
-}
-
 void setup() {
-  Serial.begin(9600);
-
   lcd.begin(16, 2);
   lcd.setBacklight(1);
 
   slotServo.attach(SERVO_PIN);
-  slotServo.write(90);
-
-  pinMode(BUZZER_PIN, OUTPUT);
+  slotServo.write(SERVO_REST_ANGLE);
 
   currentState = STATE_IDLE;
 }
 
 void loop() {
-  handleSerialCommands();
-
   switch (currentState) {
     case STATE_IDLE:
       handleIdleState();
