@@ -9,7 +9,11 @@ const int SERVO_PIN = 9;
 const int SLOT_1_ANGLE = 0;
 const int SERVO_REST_ANGLE = 90;
 
-// Keypad setup (4x4)
+const int LED_SLOT_1_PIN = 2;
+const int LED_SLOT_2_PIN = 3;
+const int LED_SLOT_3_PIN = 4;
+const int LED_SLOT_4_PIN = 5;
+
 const byte KEYPAD_ROWS = 4;
 const byte KEYPAD_COLS = 4;
 
@@ -25,20 +29,12 @@ byte colPins[KEYPAD_COLS] = {A0, A1, A2, A3};
 
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, KEYPAD_ROWS, KEYPAD_COLS);
 
-// PIN authentication state
 const char CORRECT_PIN[5] = "1234";
 const int PIN_LENGTH = 4;
 
 char enteredPin[PIN_LENGTH + 1];
 int pinIndex = 0;
 
-// ---- State Machine ----
-//
-// STATE_IDLE                 - system is ready, waiting to start a new cycle.
-// STATE_REMINDER             - tells the user it's time for medicine.
-// STATE_WAITING_FOR_PIN      - user must enter the correct PIN to continue.
-// STATE_OPENING_SLOT         - PIN accepted, the medicine slot is being opened.
-// STATE_WAITING_CONFIRMATION - waiting for the user to press '#' to confirm they took the medicine.
 enum SystemState {
   STATE_IDLE,
   STATE_REMINDER,
@@ -48,11 +44,43 @@ enum SystemState {
 };
 
 SystemState currentState = STATE_IDLE;
+bool idleScreenShown = false;
+
+void turnOffAllLeds() {
+  digitalWrite(LED_SLOT_1_PIN, LOW);
+  digitalWrite(LED_SLOT_2_PIN, LOW);
+  digitalWrite(LED_SLOT_3_PIN, LOW);
+  digitalWrite(LED_SLOT_4_PIN, LOW);
+}
+
+void showActiveSlotLed(int slotNumber) {
+  turnOffAllLeds();
+
+  if (slotNumber == 1) {
+    digitalWrite(LED_SLOT_1_PIN, HIGH);
+  }
+}
+
+void showEnterPinScreen() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ENTER PIN");
+  lcd.setCursor(0, 1);
+  lcd.print("----");
+}
+
+void resetPinInput() {
+  pinIndex = 0;
+  enteredPin[0] = '\0';
+  showEnterPinScreen();
+}
 
 void openSlot() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Opening Slot 1");
+
+  showActiveSlotLed(1);
 
   slotServo.write(SLOT_1_ANGLE);
   delay(2000);
@@ -60,28 +88,11 @@ void openSlot() {
   slotServo.write(SERVO_REST_ANGLE);
 }
 
-// Shows the PIN entry prompt on the LCD
-void showEnterPinScreen() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("ENTER PIN");
-}
-
-// Clears the entered PIN buffer and returns to the entry screen
-void resetPinInput() {
-  pinIndex = 0;
-  enteredPin[0] = '\0';
-  showEnterPinScreen();
-}
-
-// Compares the entered PIN against the correct PIN and shows the result.
-// On success, moves the state machine on to STATE_OPENING_SLOT.
-// On failure, resets the input and stays in STATE_WAITING_FOR_PIN.
 void checkPin() {
   lcd.clear();
-  lcd.setCursor(0, 0);
 
   if (strcmp(enteredPin, CORRECT_PIN) == 0) {
+    lcd.setCursor(0, 0);
     lcd.print("ACCESS");
     lcd.setCursor(0, 1);
     lcd.print("GRANTED");
@@ -89,26 +100,27 @@ void checkPin() {
 
     currentState = STATE_OPENING_SLOT;
   } else {
+    lcd.setCursor(0, 0);
     lcd.print("WRONG PIN");
     delay(2000);
 
     resetPinInput();
-    // Stay in STATE_WAITING_FOR_PIN so the user can try again.
   }
 }
 
-// STATE_IDLE: show the system ready screen, then move on to the reminder
-// state so the flow can be tested end to end.
 void handleIdleState() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("SYSTEM READY");
-  delay(2000);
+  if (!idleScreenShown) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("SYSTEM READY");
+    idleScreenShown = true;
+  }
 
+  delay(1000);
   currentState = STATE_REMINDER;
+  idleScreenShown = false;
 }
 
-// STATE_REMINDER: tell the user it's time for medicine, then ask for the PIN.
 void handleReminderState() {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -121,8 +133,6 @@ void handleReminderState() {
   currentState = STATE_WAITING_FOR_PIN;
 }
 
-// STATE_WAITING_FOR_PIN: read keypad presses and build up the entered PIN
-// one digit at a time. Moves to STATE_OPENING_SLOT once the PIN is correct.
 void handlePinState() {
   char key = keypad.getKey();
 
@@ -130,8 +140,11 @@ void handlePinState() {
     return;
   }
 
-  // Only accept digit keys for the PIN
   if (key < '0' || key > '9') {
+    return;
+  }
+
+  if (pinIndex >= PIN_LENGTH) {
     return;
   }
 
@@ -139,7 +152,6 @@ void handlePinState() {
   pinIndex++;
   enteredPin[pinIndex] = '\0';
 
-  // Show one "*" per digit typed so far
   lcd.setCursor(pinIndex - 1, 1);
   lcd.print("*");
 
@@ -148,8 +160,6 @@ void handlePinState() {
   }
 }
 
-// STATE_OPENING_SLOT: PIN was correct, open the medicine slot, then wait
-// for the user to confirm they took the medicine.
 void handleOpeningState() {
   openSlot();
 
@@ -160,8 +170,6 @@ void handleOpeningState() {
   currentState = STATE_WAITING_CONFIRMATION;
 }
 
-// STATE_WAITING_CONFIRMATION: wait for '#' to confirm the medicine was taken,
-// then return to STATE_IDLE to start the next cycle.
 void handleConfirmationState() {
   char key = keypad.getKey();
 
@@ -171,6 +179,7 @@ void handleConfirmationState() {
     lcd.print("THANK YOU");
     delay(2000);
 
+    turnOffAllLeds();
     currentState = STATE_IDLE;
   }
 }
@@ -182,6 +191,13 @@ void setup() {
   slotServo.attach(SERVO_PIN);
   slotServo.write(SERVO_REST_ANGLE);
 
+  pinMode(LED_SLOT_1_PIN, OUTPUT);
+  pinMode(LED_SLOT_2_PIN, OUTPUT);
+  pinMode(LED_SLOT_3_PIN, OUTPUT);
+  pinMode(LED_SLOT_4_PIN, OUTPUT);
+
+  turnOffAllLeds();
+
   currentState = STATE_IDLE;
 }
 
@@ -190,15 +206,19 @@ void loop() {
     case STATE_IDLE:
       handleIdleState();
       break;
+
     case STATE_REMINDER:
       handleReminderState();
       break;
+
     case STATE_WAITING_FOR_PIN:
       handlePinState();
       break;
+
     case STATE_OPENING_SLOT:
       handleOpeningState();
       break;
+
     case STATE_WAITING_CONFIRMATION:
       handleConfirmationState();
       break;
