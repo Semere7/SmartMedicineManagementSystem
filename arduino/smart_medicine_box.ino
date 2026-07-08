@@ -37,6 +37,9 @@ const int PIN_LENGTH = 4;
 char enteredPin[PIN_LENGTH + 1];
 int pinIndex = 0;
 
+const int MAX_PIN_ATTEMPTS = 3;
+int failedAttempts = 0;
+
 enum SystemState {
   STATE_IDLE,
   STATE_REMINDER,
@@ -108,11 +111,29 @@ void checkPin() {
     lcd.print("GRANTED");
     delay(1000);
 
+    failedAttempts = 0;
     currentState = STATE_OPENING_SLOT;
   } else {
+    failedAttempts++;
+
     lcd.setCursor(0, 0);
     lcd.print("WRONG PIN");
+    lcd.setCursor(0, 1);
+    lcd.print("ATTEMPT ");
+    lcd.print(failedAttempts);
+    lcd.print("/3");
     delay(2000);
+
+    if (failedAttempts >= MAX_PIN_ATTEMPTS) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("SYSTEM LOCKED");
+      lcd.setCursor(0, 1);
+      lcd.print("WAIT 10 SEC");
+      delay(10000);
+
+      failedAttempts = 0;
+    }
 
     resetPinInput();
   }
