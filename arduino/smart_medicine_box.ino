@@ -40,6 +40,9 @@ int pinIndex = 0;
 const int MAX_PIN_ATTEMPTS = 3;
 int failedAttempts = 0;
 
+const unsigned long CONFIRMATION_TIMEOUT_MS = 10000;
+unsigned long confirmationStartTime = 0;
+
 enum SystemState {
   STATE_IDLE,
   STATE_REMINDER,
@@ -200,6 +203,7 @@ void handleOpeningState() {
   lcd.setCursor(0, 0);
   lcd.print("PRESS #");
 
+  confirmationStartTime = millis();
   currentState = STATE_WAITING_CONFIRMATION;
 }
 
@@ -210,6 +214,17 @@ void handleConfirmationState() {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("THANK YOU");
+    delay(2000);
+
+    turnOffAllLeds();
+    currentState = STATE_IDLE;
+    return;
+  }
+
+  if (millis() - confirmationStartTime >= CONFIRMATION_TIMEOUT_MS) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("MISSED DOSE");
     delay(2000);
 
     turnOffAllLeds();
