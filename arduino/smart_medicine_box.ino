@@ -7,6 +7,9 @@ Servo slotServo;
 
 const int SERVO_PIN = 9;
 const int SLOT_1_ANGLE = 0;
+const int SLOT_2_ANGLE = 60;
+const int SLOT_3_ANGLE = 120;
+const int SLOT_4_ANGLE = 180;
 const int SERVO_REST_ANGLE = 90;
 
 const int LED_SLOT_1_PIN = 2;
@@ -54,6 +57,8 @@ enum SystemState {
 SystemState currentState = STATE_IDLE;
 bool idleScreenShown = false;
 
+int currentSlot = 1;
+
 void turnOffAllLeds() {
   digitalWrite(LED_SLOT_1_PIN, LOW);
   digitalWrite(LED_SLOT_2_PIN, LOW);
@@ -64,8 +69,19 @@ void turnOffAllLeds() {
 void showActiveSlotLed(int slotNumber) {
   turnOffAllLeds();
 
-  if (slotNumber == 1) {
-    digitalWrite(LED_SLOT_1_PIN, HIGH);
+  switch (slotNumber) {
+    case 1:
+      digitalWrite(LED_SLOT_1_PIN, HIGH);
+      break;
+    case 2:
+      digitalWrite(LED_SLOT_2_PIN, HIGH);
+      break;
+    case 3:
+      digitalWrite(LED_SLOT_3_PIN, HIGH);
+      break;
+    case 4:
+      digitalWrite(LED_SLOT_4_PIN, HIGH);
+      break;
   }
 }
 
@@ -91,14 +107,35 @@ void resetPinInput() {
   showEnterPinScreen();
 }
 
-void openSlot() {
+void openSlot(int slotNumber) {
+  int angle;
+
+  switch (slotNumber) {
+    case 1:
+      angle = SLOT_1_ANGLE;
+      break;
+    case 2:
+      angle = SLOT_2_ANGLE;
+      break;
+    case 3:
+      angle = SLOT_3_ANGLE;
+      break;
+    case 4:
+      angle = SLOT_4_ANGLE;
+      break;
+    default:
+      angle = SLOT_1_ANGLE;
+      break;
+  }
+
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Opening Slot 1");
+  lcd.print("Opening Slot ");
+  lcd.print(slotNumber);
 
-  showActiveSlotLed(1);
+  showActiveSlotLed(slotNumber);
 
-  slotServo.write(SLOT_1_ANGLE);
+  slotServo.write(angle);
   delay(2000);
 
   slotServo.write(SERVO_REST_ANGLE);
@@ -197,7 +234,7 @@ void handlePinState() {
 }
 
 void handleOpeningState() {
-  openSlot();
+  openSlot(currentSlot);
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -217,6 +254,7 @@ void handleConfirmationState() {
     delay(2000);
 
     turnOffAllLeds();
+    currentSlot = (currentSlot % 4) + 1;
     currentState = STATE_IDLE;
     return;
   }
@@ -228,6 +266,7 @@ void handleConfirmationState() {
     delay(2000);
 
     turnOffAllLeds();
+    currentSlot = (currentSlot % 4) + 1;
     currentState = STATE_IDLE;
   }
 }
