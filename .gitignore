@@ -64,6 +64,11 @@ build/
 .idea/
 *.iml
 
+# ─── Bridge (Puppeteer) ──────────────────────────────────────────────────────
+bridge/node_modules/
+bridge/browser-profile/
+bridge/.env
+
 # ─── Logs & temp ─────────────────────────────────────────────────────────────
 *.log
 *.tmp

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from serial_manager import SerialManager
+from bridge_runner import run_bridge_command, BridgeError
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -78,21 +79,25 @@ def trigger_slot(slot: int):
     if slot not in SLOT_NAMES:
         raise HTTPException(status_code=404, detail="Unknown slot")
 
-    if not serial_manager.is_connected():
-        raise HTTPException(status_code=400, detail="Arduino is not connected")
-
     command = f"OPEN_SLOT_{slot}"
+    expected_reply = f"OK_SLOT_{slot}"
 
     try:
-        serial_manager.send_command(command)
-    except Exception as error:
-        raise HTTPException(status_code=500, detail=f"Failed to send command: {error}")
+        output = run_bridge_command(command)
+    except BridgeError as error:
+        raise HTTPException(status_code=502, detail=f"Bridge failed: {error}")
+
+    if expected_reply not in output:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Bridge ran but {expected_reply} was not confirmed by the Arduino.",
+        )
 
     return {
         "status": "success",
         "slot": slot,
         "slot_name": SLOT_NAMES[slot],
-        "message": f"Slot {slot} reminder triggered ({command} sent)",
+        "message": f"Slot {slot} reminder triggered via Tinkercad bridge ({expected_reply} confirmed)",
     }
 
 

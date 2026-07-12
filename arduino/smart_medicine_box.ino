@@ -46,6 +46,13 @@ int failedAttempts = 0;
 const unsigned long CONFIRMATION_TIMEOUT_MS = 10000;
 unsigned long confirmationStartTime = 0;
 
+const int SERIAL_COMMAND_MAX_LENGTH = 20;
+char serialCommandBuffer[SERIAL_COMMAND_MAX_LENGTH + 1];
+int serialCommandLength = 0;
+
+const unsigned long SERIAL_COMMAND_IDLE_MS = 50;
+unsigned long lastSerialByteTime = 0;
+
 enum SystemState {
   STATE_IDLE,
   STATE_REMINDER,
@@ -87,10 +94,11 @@ void showActiveSlotLed(int slotNumber) {
 
 void playReminderSound() {
   for (int i = 0; i < 3; i++) {
-    tone(BUZZER_PIN, 1200, 150);
-    delay(200);
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(150);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(150);
   }
-  noTone(BUZZER_PIN);
 }
 
 void showEnterPinScreen() {
@@ -186,10 +194,6 @@ void handleIdleState() {
     lcd.print("SYSTEM READY");
     idleScreenShown = true;
   }
-
-  delay(1000);
-  currentState = STATE_REMINDER;
-  idleScreenShown = false;
 }
 
 void handleReminderState() {
@@ -254,8 +258,8 @@ void handleConfirmationState() {
     delay(2000);
 
     turnOffAllLeds();
-    currentSlot = (currentSlot % 4) + 1;
     currentState = STATE_IDLE;
+    idleScreenShown = false;
     return;
   }
 
@@ -266,12 +270,78 @@ void handleConfirmationState() {
     delay(2000);
 
     turnOffAllLeds();
-    currentSlot = (currentSlot % 4) + 1;
     currentState = STATE_IDLE;
+    idleScreenShown = false;
+  }
+}
+
+void processSerialCommand(const char *command) {
+  int requestedSlot = 0;
+
+  if (strcmp(command, "OPEN_SLOT_1") == 0) {
+    requestedSlot = 1;
+  } else if (strcmp(command, "OPEN_SLOT_2") == 0) {
+    requestedSlot = 2;
+  } else if (strcmp(command, "OPEN_SLOT_3") == 0) {
+    requestedSlot = 3;
+  } else if (strcmp(command, "OPEN_SLOT_4") == 0) {
+    requestedSlot = 4;
+  }
+
+  if (requestedSlot == 0) {
+    Serial.println("UNKNOWN_COMMAND");
+    return;
+  }
+
+  currentSlot = requestedSlot;
+  pinIndex = 0;
+  enteredPin[0] = '\0';
+  idleScreenShown = false;
+  currentState = STATE_REMINDER;
+
+  switch (requestedSlot) {
+    case 1:
+      Serial.println("OK_SLOT_1");
+      break;
+    case 2:
+      Serial.println("OK_SLOT_2");
+      break;
+    case 3:
+      Serial.println("OK_SLOT_3");
+      break;
+    case 4:
+      Serial.println("OK_SLOT_4");
+      break;
+  }
+}
+
+void handleSerialCommands() {
+  while (Serial.available() > 0) {
+    char incomingChar = Serial.read();
+
+    if (incomingChar == '\n' || incomingChar == '\r') {
+      continue;
+    }
+
+    if (serialCommandLength < SERIAL_COMMAND_MAX_LENGTH) {
+      serialCommandBuffer[serialCommandLength] = incomingChar;
+      serialCommandLength++;
+    }
+
+    lastSerialByteTime = millis();
+  }
+
+  if (serialCommandLength > 0 && millis() - lastSerialByteTime >= SERIAL_COMMAND_IDLE_MS) {
+    serialCommandBuffer[serialCommandLength] = '\0';
+    processSerialCommand(serialCommandBuffer);
+    serialCommandLength = 0;
+    serialCommandBuffer[0] = '\0';
   }
 }
 
 void setup() {
+  Serial.begin(9600);
+
   lcd.begin(16, 2);
   lcd.setBacklight(1);
 
@@ -284,6 +354,7 @@ void setup() {
   pinMode(LED_SLOT_4_PIN, OUTPUT);
 
   pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
   turnOffAllLeds();
 
@@ -291,6 +362,8 @@ void setup() {
 }
 
 void loop() {
+  handleSerialCommands();
+
   switch (currentState) {
     case STATE_IDLE:
       handleIdleState();
