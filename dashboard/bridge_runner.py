@@ -38,3 +38,22 @@ def run_bridge_command(command: str) -> str:
         raise BridgeError(f"Bridge script exited with code {result.returncode}:\n{output}")
 
     return output
+
+
+def trigger_slot_via_bridge(slot: int) -> dict:
+    command = f"OPEN_SLOT_{slot}"
+    expected_reply = f"OK_SLOT_{slot}"
+
+    output = run_bridge_command(command)
+
+    if expected_reply not in output:
+        raise BridgeError(f"Bridge ran but {expected_reply} was not confirmed by the Arduino.")
+
+    if "DOSE_TAKEN" in output:
+        dose_status = "taken"
+    elif "MISSED_DOSE" in output:
+        dose_status = "missed"
+    else:
+        dose_status = None
+
+    return {"expected_reply": expected_reply, "output": output, "dose_status": dose_status}

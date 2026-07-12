@@ -14,22 +14,83 @@
       <span id="system-status">Status: System Ready</span>
     </div>
 
+    <div class="next-schedule" id="next-schedule">Next scheduled medicine: none</div>
+
     <div class="slots">
-      <div class="slot-card">
+      <div class="slot-card" data-slot="1">
         <h2>Morning</h2>
         <button class="trigger-button" data-slot="1">Trigger Slot 1</button>
+
+        <div class="schedule-form">
+          <label>Medicine name
+            <input type="text" class="schedule-name" data-slot="1" placeholder="e.g. Aspirin">
+          </label>
+          <label>Time (24h)
+            <input type="time" class="schedule-time" data-slot="1">
+          </label>
+          <label class="schedule-enabled-label">
+            <input type="checkbox" class="schedule-enabled" data-slot="1"> Enabled
+          </label>
+          <button class="schedule-save-button" data-slot="1">Save Schedule</button>
+          <div class="schedule-current" data-slot="1">No schedule saved</div>
+        </div>
       </div>
-      <div class="slot-card">
+
+      <div class="slot-card" data-slot="2">
         <h2>Noon</h2>
         <button class="trigger-button" data-slot="2">Trigger Slot 2</button>
+
+        <div class="schedule-form">
+          <label>Medicine name
+            <input type="text" class="schedule-name" data-slot="2" placeholder="e.g. Aspirin">
+          </label>
+          <label>Time (24h)
+            <input type="time" class="schedule-time" data-slot="2">
+          </label>
+          <label class="schedule-enabled-label">
+            <input type="checkbox" class="schedule-enabled" data-slot="2"> Enabled
+          </label>
+          <button class="schedule-save-button" data-slot="2">Save Schedule</button>
+          <div class="schedule-current" data-slot="2">No schedule saved</div>
+        </div>
       </div>
-      <div class="slot-card">
+
+      <div class="slot-card" data-slot="3">
         <h2>Evening</h2>
         <button class="trigger-button" data-slot="3">Trigger Slot 3</button>
+
+        <div class="schedule-form">
+          <label>Medicine name
+            <input type="text" class="schedule-name" data-slot="3" placeholder="e.g. Aspirin">
+          </label>
+          <label>Time (24h)
+            <input type="time" class="schedule-time" data-slot="3">
+          </label>
+          <label class="schedule-enabled-label">
+            <input type="checkbox" class="schedule-enabled" data-slot="3"> Enabled
+          </label>
+          <button class="schedule-save-button" data-slot="3">Save Schedule</button>
+          <div class="schedule-current" data-slot="3">No schedule saved</div>
+        </div>
       </div>
-      <div class="slot-card">
+
+      <div class="slot-card" data-slot="4">
         <h2>Night</h2>
         <button class="trigger-button" data-slot="4">Trigger Slot 4</button>
+
+        <div class="schedule-form">
+          <label>Medicine name
+            <input type="text" class="schedule-name" data-slot="4" placeholder="e.g. Aspirin">
+          </label>
+          <label>Time (24h)
+            <input type="time" class="schedule-time" data-slot="4">
+          </label>
+          <label class="schedule-enabled-label">
+            <input type="checkbox" class="schedule-enabled" data-slot="4"> Enabled
+          </label>
+          <button class="schedule-save-button" data-slot="4">Save Schedule</button>
+          <div class="schedule-current" data-slot="4">No schedule saved</div>
+        </div>
       </div>
     </div>
 

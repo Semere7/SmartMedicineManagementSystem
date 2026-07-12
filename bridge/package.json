@@ -2,7 +2,7 @@
   "name": "smart-medicine-tinkercad-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "Prototype bridge for controlling the Tinkercad browser UI with Puppeteer.",
+  "description": "Puppeteer bridge that drives the Tinkercad Serial Monitor to trigger and confirm medicine-slot reminders.",
   "main": "tinkercad_bridge.js",
   "scripts": {
     "start": "node tinkercad_bridge.js"

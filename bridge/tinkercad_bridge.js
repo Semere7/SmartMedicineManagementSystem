@@ -1,16 +1,20 @@
-const path = require('path');
+require('dotenv').config();
 const puppeteer = require('puppeteer');
 
 const BROWSER_URL = 'http://127.0.0.1:9222';
-const SCREENSHOT_PATH = path.join(__dirname, 'tinkercad-serial-expanded.png');
-const PROJECT_URL_MATCH = '8XVYPMMFUnn';
-const PROJECT_TITLE_MATCH = 'Smooth Lappi-Duup';
+// Identifies which open Tinkercad tab to drive. Override via .env for a
+// different project; these defaults match this repo's reference circuit.
+const PROJECT_URL_MATCH = process.env.TINKERCAD_PROJECT_ID || '8XVYPMMFUnn';
+const PROJECT_TITLE_MATCH = process.env.TINKERCAD_PROJECT_TITLE || 'Smooth Lappi-Duup';
 
 const START_SIMULATION_SELECTORS = ['#SIMULATION_ID', '.js-toggleSimulation', '[data-event="simulate"]'];
 const SERIAL_MONITOR_SELECTORS = ['#SERIAL_MONITOR_ID', '.js-toggle_serial_monitor', '[data-event="serial-monitor"]'];
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120000;
+
+const DOSE_WAIT_TIMEOUT_MS = 120000;
+const DOSE_POLL_INTERVAL_MS = 2000;
 
 const VALID_COMMANDS = ['OPEN_SLOT_1', 'OPEN_SLOT_2', 'OPEN_SLOT_3', 'OPEN_SLOT_4'];
 const requestedCommand = process.argv[2];
@@ -48,41 +52,30 @@ async function clickViaEvaluate(page, selectors) {
   }, selectors);
 }
 
-async function ensureSimulationRunning(page) {
-  const initialLabel = await getSimulationLabel(page);
-  console.log(`[bridge] Simulation button text: "${initialLabel}"`);
+// Polls the simulation button text until it equals targetLabel or the
+// timeout elapses. Used both when waiting for "Stop Simulation" after
+// starting, and "Start Simulation" after stopping.
+async function waitForSimulationLabel(page, targetLabel) {
+  let currentLabel = await getSimulationLabel(page);
 
-  if (initialLabel === 'Stop Simulation') {
-    console.log('[bridge] Simulation is already running.');
+  if (currentLabel === targetLabel) {
     return true;
   }
 
-  console.log('[bridge] About to click Start Simulation.');
-  const usedSelector = await clickViaEvaluate(page, START_SIMULATION_SELECTORS);
-
-  if (!usedSelector) {
-    console.log(`[bridge] Could not find any selector for Start Simulation. Tried: ${START_SIMULATION_SELECTORS.join(', ')}`);
-    return false;
-  }
-
-  console.log(`[bridge] Clicked Start Simulation using selector: ${usedSelector}`);
-  console.log(`[bridge] Polling simulation button text every ${POLL_INTERVAL_MS}ms for up to ${POLL_TIMEOUT_MS}ms...`);
-
+  console.log(`[bridge] Polling simulation button text every ${POLL_INTERVAL_MS}ms for up to ${POLL_TIMEOUT_MS}ms (waiting for "${targetLabel}")...`);
   const maxAttempts = Math.ceil(POLL_TIMEOUT_MS / POLL_INTERVAL_MS);
-  let currentLabel = initialLabel;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await delay(POLL_INTERVAL_MS);
     currentLabel = await getSimulationLabel(page);
     console.log(`[bridge] Poll ${attempt}/${maxAttempts}: button text = "${currentLabel}"`);
 
-    if (currentLabel === 'Stop Simulation') {
-      console.log('[bridge] Simulation started.');
+    if (currentLabel === targetLabel) {
       return true;
     }
   }
 
-  console.log(`[bridge] Simulation did not start. Final button text: "${currentLabel}"`);
+  console.log(`[bridge] Timed out waiting for "${targetLabel}". Final button text: "${currentLabel}"`);
   return false;
 }
 
@@ -140,16 +133,6 @@ function findVisibleSerialControls() {
 
   collect(document.documentElement);
   return results;
-}
-
-function printControl(label, c) {
-  if (!c) {
-    console.log(`[bridge] ${label}: not found`);
-    return;
-  }
-  console.log(
-    `[bridge] ${label}: tag=${c.tag} id="${c.id}" class="${c.className}" placeholder="${c.placeholder}" aria-label="${c.ariaLabel}" disabled=${c.disabled}`
-  );
 }
 
 // Runs inside the page context. Finds the visible serial-monitor text
@@ -343,6 +326,42 @@ function findSendButtonControl(controls) {
   return controls.find((c) => c.dataEvent === 'serial-send');
 }
 
+// Clears the Serial Monitor input, waits 500ms, types the command, waits
+// 300ms, then clicks Send. Returns false if any DOM step fails.
+async function sendSerialCommand(page, command) {
+  console.log('[bridge] Clearing the Serial Monitor input...');
+  const cleared = await page.evaluate(clearSerialInputElement);
+
+  if (!cleared) {
+    console.log('[bridge] Failed to clear/focus the Serial Monitor input box.');
+    return false;
+  }
+
+  console.log('[bridge] Waiting 500ms before typing...');
+  await delay(500);
+
+  // Re-focus in case the 500ms wait let focus drift away from the input
+  // (observed to cause keystrokes to be typed nowhere).
+  await page.evaluate(focusSerialInputElement);
+
+  console.log(`[bridge] Typing "${command}" into the Serial Monitor input box...`);
+  await page.keyboard.type(command);
+
+  console.log('[bridge] Waiting 300ms before clicking Send...');
+  await delay(300);
+
+  console.log('[bridge] Clicking the Send button...');
+  const sent = await page.evaluate(clickSerialSendButton);
+
+  if (!sent) {
+    console.log('[bridge] Failed to click the Send button.');
+    return false;
+  }
+
+  console.log(`[bridge] Sent "${command}" to the Tinkercad Serial Monitor.`);
+  return true;
+}
+
 async function main() {
   const browser = await puppeteer.connect({
     browserURL: BROWSER_URL,
@@ -363,106 +382,198 @@ async function main() {
 
   console.log(`[bridge] Opened Tinkercad project tab: ${tinkercadPage.url()}`);
 
-  console.log('[bridge] Verifying simulation is running (will start it if needed, will not stop it)...');
-  const running = await ensureSimulationRunning(tinkercadPage);
+  let startedSimulationByBridge = false;
+  let retryNeeded = false;
+  let foundExpectedReply = false;
+  let finalStatus = null; // 'taken' | 'missed' | null (timeout or OK_SLOT_X never confirmed)
+  let simulationStoppedAtEnd = false;
 
-  if (!running) {
-    console.log('[bridge] Simulation could not be confirmed running. Aborting without opening Serial Monitor.');
-    browser.disconnect();
-    console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-    process.exitCode = 1;
-    return;
-  }
+  try {
+    console.log('[bridge] Checking simulation state...');
+    const initialLabel = await getSimulationLabel(tinkercadPage);
+    console.log(`[bridge] Simulation button text: "${initialLabel}"`);
 
-  console.log('[bridge] Checking whether the Serial Monitor is already open...');
-  let controls = await tinkercadPage.evaluate(findVisibleSerialControls);
-  let serialInput = findSerialInputControl(controls);
-  let sendButton = findSendButtonControl(controls);
+    if (initialLabel === 'Start Simulation') {
+      console.log('[bridge] Clicking Start Simulation...');
+      const usedSelector = await clickViaEvaluate(tinkercadPage, START_SIMULATION_SELECTORS);
 
-  if (serialInput && sendButton) {
-    console.log('[bridge] Serial Monitor is already open. Not clicking the toggle.');
-  } else {
-    console.log('[bridge] Serial Monitor appears collapsed. Clicking the toggle to open it.');
-    const serialMonitorSelector = await clickViaEvaluate(tinkercadPage, SERIAL_MONITOR_SELECTORS);
+      if (!usedSelector) {
+        console.log(`[bridge] Could not find any selector for Start Simulation. Tried: ${START_SIMULATION_SELECTORS.join(', ')}`);
+        return;
+      }
 
-    if (!serialMonitorSelector) {
-      console.log(`[bridge] Could not find any selector for Serial Monitor. Tried: ${SERIAL_MONITOR_SELECTORS.join(', ')}`);
-      browser.disconnect();
-      console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-      process.exitCode = 1;
+      startedSimulationByBridge = true;
+      console.log(`[bridge] Clicked Start Simulation using selector: ${usedSelector}`);
+
+      const running = await waitForSimulationLabel(tinkercadPage, 'Stop Simulation');
+
+      if (!running) {
+        console.log('[bridge] Simulation did not start. Aborting.');
+        return;
+      }
+
+      console.log('[bridge] Simulation started by bridge. Waiting an additional 3000ms for Arduino initialization...');
+      await delay(3000);
+      console.log('[bridge] 3000ms initialization delay complete.');
+    } else {
+      console.log('[bridge] Simulation was already running before the bridge connected. Bridge will not start or stop it.');
+    }
+
+    console.log('[bridge] Checking whether the Serial Monitor is already open...');
+    let controls = await tinkercadPage.evaluate(findVisibleSerialControls);
+    let serialInput = findSerialInputControl(controls);
+    let sendButton = findSendButtonControl(controls);
+
+    if (serialInput && sendButton) {
+      console.log('[bridge] Serial Monitor is already open. Not clicking the toggle.');
+    } else {
+      console.log('[bridge] Serial Monitor appears collapsed. Clicking the toggle to open it.');
+      const serialMonitorSelector = await clickViaEvaluate(tinkercadPage, SERIAL_MONITOR_SELECTORS);
+
+      if (!serialMonitorSelector) {
+        console.log(`[bridge] Could not find any selector for Serial Monitor. Tried: ${SERIAL_MONITOR_SELECTORS.join(', ')}`);
+        return;
+      }
+
+      console.log(`[bridge] Clicked Serial Monitor toggle using selector: ${serialMonitorSelector}`);
+      await delay(1000);
+
+      controls = await tinkercadPage.evaluate(findVisibleSerialControls);
+      serialInput = findSerialInputControl(controls);
+      sendButton = findSendButtonControl(controls);
+    }
+
+    if (!serialInput) {
+      console.log('[bridge] Could not locate the Serial Monitor input box. Aborting.');
       return;
     }
 
-    console.log(`[bridge] Clicked Serial Monitor toggle using selector: ${serialMonitorSelector}`);
-    await delay(1000);
+    if (!sendButton) {
+      console.log('[bridge] Could not locate the Serial Monitor Send button. Aborting.');
+      return;
+    }
 
-    controls = await tinkercadPage.evaluate(findVisibleSerialControls);
-    serialInput = findSerialInputControl(controls);
-    sendButton = findSendButtonControl(controls);
-  }
+    const beforeFirstSendText = await tinkercadPage.evaluate(getSerialPanelText);
+    const firstSendOk = await sendSerialCommand(tinkercadPage, requestedCommand);
 
-  console.log('[bridge] Identified serial monitor controls:');
-  printControl('Serial input field', serialInput);
-  printControl('Send button', sendButton);
+    if (!firstSendOk) {
+      console.log('[bridge] Aborting: could not send the command.');
+      return;
+    }
 
-  if (!serialInput) {
-    console.log('[bridge] Could not locate the Serial Monitor input box. Aborting.');
+    console.log('[bridge] Waiting 1500ms for the Arduino response...');
+    await delay(1500);
+
+    console.log('[bridge] Inspecting Serial Monitor output...');
+    let fullOutput = await tinkercadPage.evaluate(getSerialPanelText);
+    let newOutput = fullOutput.startsWith(beforeFirstSendText) ? fullOutput.slice(beforeFirstSendText.length) : fullOutput;
+    foundExpectedReply = newOutput.includes(expectedReply);
+    const foundUnknownCommand = newOutput.includes('UNKNOWN_COMMAND');
+
+    console.log(`[bridge] ${expectedReply} found: ${foundExpectedReply}`);
+    console.log(`[bridge] UNKNOWN_COMMAND found: ${foundUnknownCommand}`);
+
+    if (!foundExpectedReply && foundUnknownCommand) {
+      retryNeeded = true;
+      console.log(
+        `[bridge] Received UNKNOWN_COMMAND without ${expectedReply}. Waiting 1000ms before resending (retry 1 of 1)...`
+      );
+      await delay(1000);
+
+      const beforeRetryText = fullOutput;
+
+      console.log(`[bridge] Resending "${requestedCommand}"...`);
+      const retrySendOk = await sendSerialCommand(tinkercadPage, requestedCommand);
+
+      if (!retrySendOk) {
+        console.log('[bridge] Retry send failed (could not clear/type/click).');
+      } else {
+        console.log('[bridge] Waiting 1500ms for the Arduino response to the retry...');
+        await delay(1500);
+
+        console.log('[bridge] Inspecting Serial Monitor output after retry...');
+        fullOutput = await tinkercadPage.evaluate(getSerialPanelText);
+        newOutput = fullOutput.startsWith(beforeRetryText) ? fullOutput.slice(beforeRetryText.length) : fullOutput;
+        foundExpectedReply = newOutput.includes(expectedReply);
+
+        console.log(`[bridge] ${expectedReply} found after retry: ${foundExpectedReply}`);
+
+        if (foundExpectedReply) {
+          console.log('[bridge] Retry succeeded — treating operation as success.');
+        }
+      }
+    }
+
+    if (!foundExpectedReply) {
+      console.log(`[bridge] ${expectedReply} was never confirmed; skipping the DOSE_TAKEN/MISSED_DOSE wait.`);
+    } else {
+      console.log(
+        `[bridge] ${expectedReply} confirmed. Waiting for DOSE_TAKEN or MISSED_DOSE (up to ${DOSE_WAIT_TIMEOUT_MS}ms)...`
+      );
+
+      const doseBaselineText = fullOutput;
+      const doseWaitStart = Date.now();
+
+      while (Date.now() - doseWaitStart < DOSE_WAIT_TIMEOUT_MS) {
+        await delay(DOSE_POLL_INTERVAL_MS);
+
+        const currentFullText = await tinkercadPage.evaluate(getSerialPanelText);
+        const doseOutput = currentFullText.startsWith(doseBaselineText)
+          ? currentFullText.slice(doseBaselineText.length)
+          : currentFullText;
+
+        if (doseOutput.includes('DOSE_TAKEN')) {
+          finalStatus = 'taken';
+          console.log(`[bridge] DOSE_TAKEN found after ${Date.now() - doseWaitStart}ms.`);
+          break;
+        }
+
+        if (doseOutput.includes('MISSED_DOSE')) {
+          finalStatus = 'missed';
+          console.log(`[bridge] MISSED_DOSE found after ${Date.now() - doseWaitStart}ms.`);
+          break;
+        }
+      }
+
+      if (!finalStatus) {
+        console.log(
+          `[bridge] Timed out after ${DOSE_WAIT_TIMEOUT_MS}ms waiting for DOSE_TAKEN or MISSED_DOSE.`
+        );
+      }
+    }
+  } finally {
+    if (startedSimulationByBridge) {
+      console.log('[bridge] Bridge started the simulation; stopping it now...');
+      const stopSelector = await clickViaEvaluate(tinkercadPage, START_SIMULATION_SELECTORS);
+
+      if (!stopSelector) {
+        console.log('[bridge] Could not find the simulation toggle to stop it.');
+      } else {
+        const stopped = await waitForSimulationLabel(tinkercadPage, 'Start Simulation');
+
+        if (stopped) {
+          simulationStoppedAtEnd = true;
+          console.log('Simulation stopped by bridge');
+        } else {
+          console.log('[bridge] Simulation button did not revert to "Start Simulation" in time.');
+        }
+      }
+    } else {
+      console.log('[bridge] Simulation was already running before the bridge connected; leaving it running.');
+    }
+
+    console.log('[bridge] Summary:');
+    console.log(`[bridge]   Bridge started the simulation: ${startedSimulationByBridge}`);
+    console.log(`[bridge]   Retry needed: ${retryNeeded}`);
+    console.log(`[bridge]   ${expectedReply} found: ${foundExpectedReply}`);
+    console.log(`[bridge]   final_status: ${finalStatus === null ? 'timeout' : finalStatus}`);
+    console.log(`[bridge]   Simulation stopped at end: ${simulationStoppedAtEnd}`);
+
     browser.disconnect();
-    console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-    process.exitCode = 1;
-    return;
+    console.log('[bridge] Disconnected from Chrome.');
   }
 
-  if (!sendButton) {
-    console.log('[bridge] Could not locate the Serial Monitor Send button. Aborting.');
-    browser.disconnect();
-    console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log('[bridge] Clearing and focusing the Serial Monitor input box...');
-  const cleared = await tinkercadPage.evaluate(clearSerialInputElement);
-
-  if (!cleared) {
-    console.log('[bridge] Failed to clear/focus the Serial Monitor input box. Aborting.');
-    browser.disconnect();
-    console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log(`[bridge] Typing "${requestedCommand}" into the Serial Monitor input box...`);
-  await tinkercadPage.keyboard.type(requestedCommand);
-
-  console.log('[bridge] Clicking the Send button...');
-  const sent = await tinkercadPage.evaluate(clickSerialSendButton);
-
-  if (!sent) {
-    console.log('[bridge] Failed to click the Send button. Aborting.');
-    browser.disconnect();
-    console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log(`[bridge] Sent "${requestedCommand}" to the Tinkercad Serial Monitor.`);
-
-  console.log('[bridge] Waiting briefly for the Arduino response...');
-  await delay(1500);
-
-  console.log('[bridge] Inspecting Serial Monitor output...');
-  const serialOutput = await tinkercadPage.evaluate(getSerialPanelText);
-  const foundExpectedReply = serialOutput.includes(expectedReply);
-
-  console.log('[bridge] Serial Monitor output:');
-  console.log(serialOutput);
-  console.log(`[bridge] ${expectedReply} found: ${foundExpectedReply}`);
-
-  browser.disconnect();
-  console.log('[bridge] Disconnected from Chrome. Chrome window remains open.');
-
-  process.exitCode = foundExpectedReply ? 0 : 1;
+  process.exitCode = foundExpectedReply && finalStatus !== null ? 0 : 1;
 }
 
 main().catch((error) => {

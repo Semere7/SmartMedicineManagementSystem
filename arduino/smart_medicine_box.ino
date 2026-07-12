@@ -50,7 +50,7 @@ const int SERIAL_COMMAND_MAX_LENGTH = 20;
 char serialCommandBuffer[SERIAL_COMMAND_MAX_LENGTH + 1];
 int serialCommandLength = 0;
 
-const unsigned long SERIAL_COMMAND_IDLE_MS = 50;
+const unsigned long SERIAL_COMMAND_IDLE_MS = 1000;
 unsigned long lastSerialByteTime = 0;
 
 enum SystemState {
@@ -258,6 +258,7 @@ void handleConfirmationState() {
     delay(2000);
 
     turnOffAllLeds();
+    Serial.println("DOSE_TAKEN");
     currentState = STATE_IDLE;
     idleScreenShown = false;
     return;
@@ -270,6 +271,7 @@ void handleConfirmationState() {
     delay(2000);
 
     turnOffAllLeds();
+    Serial.println("MISSED_DOSE");
     currentState = STATE_IDLE;
     idleScreenShown = false;
   }

@@ -1,8 +1,8 @@
-# Tinkercad Puppeteer Bridge (Prototype)
+# Tinkercad Puppeteer Bridge
 
-Verifies whether Puppeteer can drive the Tinkercad browser UI, as a first step
-toward automating the Tinkercad Serial Monitor. This prototype only opens the
-project and lists the page's frames — it does not type into anything yet.
+Drives the Tinkercad Serial Monitor to trigger and confirm medicine-slot
+reminders on the simulated Arduino, invoked by the dashboard backend
+(`dashboard/bridge_runner.py`) or directly from the command line.
 
 ## Install
 
@@ -18,22 +18,28 @@ cp .env.example .env
 ```
 
 Edit `bridge/.env` and set `TINKERCAD_URL` to your Tinkercad project's editor
-URL.
+URL. `TINKERCAD_PROJECT_ID` / `TINKERCAD_PROJECT_TITLE` are optional overrides
+for which open tab the bridge selects; leave them unset to use this repo's
+reference circuit.
 
 ## Run
 
 ```
-npm start
+node tinkercad_bridge.js OPEN_SLOT_1
 ```
 
-This launches a visible Chrome window using a persistent profile stored in
-`bridge/browser-profile/`, so you only need to log in to Tinkercad once. The
-script navigates to `TINKERCAD_URL`, waits for the page to load, prints every
-frame's name and URL, then leaves the browser open for manual inspection.
-Close the browser window (or Ctrl+C the script) to exit.
+(or `OPEN_SLOT_2` / `OPEN_SLOT_3` / `OPEN_SLOT_4`)
+
+This launches/reuses a visible Chrome window (via a persistent profile in
+`bridge/browser-profile/`, so you only need to log in to Tinkercad once),
+selects the matching project tab, starts the simulation if it isn't already
+running, opens the Serial Monitor, sends the command, waits for the matching
+`OK_SLOT_X` confirmation (retrying once on `UNKNOWN_COMMAND`), then waits up
+to 120 seconds for `DOSE_TAKEN` or `MISSED_DOSE`. If the bridge itself started
+the simulation, it stops it again at the end; if the simulation was already
+running, it's left running.
 
 ## Notes
 
 - `bridge/browser-profile/` and `bridge/.env` are gitignored — never commit
   them, since the profile can contain your logged-in Tinkercad session.
-- This is a prototype only. Typing into the Serial Monitor is a follow-up step.

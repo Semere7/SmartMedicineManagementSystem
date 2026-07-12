@@ -69,6 +69,9 @@ bridge/node_modules/
 bridge/browser-profile/
 bridge/.env
 
+# ─── Dashboard data ──────────────────────────────────────────────────────────
+dashboard/data/*.tmp
+
 # ─── Logs & temp ─────────────────────────────────────────────────────────────
 *.log
 *.tmp
